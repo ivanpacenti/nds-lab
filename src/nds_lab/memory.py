@@ -1,5 +1,19 @@
 """Bounded little-endian memory, with explicit alignment checks."""
 
+from typing import Protocol
+
+
+class MemoryBus(Protocol):
+    """RAM access interface consumed by the CPU."""
+
+    def validate(self, address: int, width: int, alignment: int = 1) -> None: ...
+    def read8(self, address: int) -> int: ...
+    def read16(self, address: int) -> int: ...
+    def read32(self, address: int) -> int: ...
+    def write8(self, address: int, value: int) -> None: ...
+    def write16(self, address: int, value: int) -> None: ...
+    def write32(self, address: int, value: int) -> None: ...
+
 
 class MemoryAccessError(ValueError):
     """An access lies outside this region or violates its alignment."""
@@ -10,6 +24,7 @@ class Memory:
         if size <= 0 or base < 0 or base + size > 1 << 32:
             raise ValueError("Memory must fit in the 32-bit address space")
         self.base = base
+        self.size = size
         self._data = bytearray(size)
 
     def _offset(self, address: int, width: int, alignment: int = 1) -> int:
@@ -21,6 +36,9 @@ class Memory:
                 f"Unaligned {alignment}-byte access at {address:#x}"
             )
         return offset
+
+    def validate(self, address: int, width: int, alignment: int = 1) -> None:
+        self._offset(address, width, alignment)
 
     def load(self, address: int, data: bytes) -> None:
         offset = self._offset(address, len(data))

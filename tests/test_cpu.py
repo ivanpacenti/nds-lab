@@ -139,10 +139,6 @@ def test_branches(word, address, target, link):
 @pytest.mark.parametrize(
     "word",
     [
-        0xE12FFF1E,
-        0xE0000190,
-        0xE1A00101,
-        0xE3A0F001,
         0xE320F000,
         0xFA000000,
         0xE3511001,

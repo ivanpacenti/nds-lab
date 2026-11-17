@@ -1,9 +1,11 @@
 """Run small ARM programs with optional instruction traces."""
 
 import argparse
+from pathlib import Path
 
-from nds_lab.cpu import CPU, StepResult
-from nds_lab.memory import Memory
+from nds_lab.cpu import CPU, StepResult, UnsupportedInstruction
+from nds_lab.memory import Memory, MemoryAccessError
+from nds_lab.nds import NDS, ROMError
 
 # Each entry is one ARM instruction, stored little-endian in memory.
 SUM_PROGRAM = (
@@ -42,6 +44,7 @@ def format_step(step: StepResult) -> str:
     )
     return (
         f"{step.address:08X}  {step.instruction:08X}  {status}  "
+        f"{'THUMB' if step.thumb else 'ARM'}  "
         f"{registers}  NZCV={flags}"
     )
 
@@ -78,10 +81,52 @@ def main() -> None:
     parser.add_argument(
         "--trace", action="store_true", help="Print state after each step"
     )
-    parser.add_argument(
-        "--demo", choices=("sum", "memory"), default="sum", help="Choose a demo"
+    mode = parser.add_mutually_exclusive_group()
+    mode.add_argument(
+        "--demo",
+        choices=("sum", "memory", "logic", "widths", "stack", "thumb", "nds"),
+        default="sum",
+        help="Choose a demo",
     )
+    mode.add_argument("--rom", type=Path, help="Direct-load an original-DS .nds image")
+    parser.add_argument(
+        "--steps", type=int, default=100, help="Bounded ROM instruction budget"
+    )
+    parser.add_argument("--cpu", choices=("arm9", "arm7", "both"), default="both")
     args = parser.parse_args()
+    if args.steps <= 0:
+        parser.error("--steps must be positive")
+    if args.rom:
+        try:
+            machine = NDS(args.rom.read_bytes())
+            processors = ("arm9", "arm7") if args.cpu == "both" else (args.cpu,)
+            for index in range(args.steps):
+                processor = processors[index % len(processors)]
+                cpu = getattr(machine, processor)
+                try:
+                    step = machine.step(processor)
+                except (MemoryAccessError, UnsupportedInstruction) as error:
+                    raise RuntimeError(
+                        f"{processor} at {cpu.pc:#010x}: {error}"
+                    ) from error
+                if args.trace:
+                    print(f"{processor}: {format_step(step)}")
+            print(f"Executed {args.steps} instructions from {args.rom.name}")
+        except (OSError, ROMError, RuntimeError) as error:
+            parser.exit(1, f"Error: {error}\n")
+        return
+    if args.demo in ("logic", "widths", "stack", "thumb", "nds"):
+        from nds_lab import experiments
+
+        runner = getattr(experiments, f"run_{args.demo}")
+        result = runner(trace=args.trace)
+        if args.demo == "nds":
+            print(f"NDS shared RAM result = {result.main_ram.read32(0x02001004)}")
+        else:
+            print(
+                f"{args.demo.capitalize()} demo passed: r0={result.registers[0]:#010x}"
+            )
+        return
     if args.demo == "memory":
         cpu, steps = run_memory_demo(trace=args.trace)
         result = cpu.memory.read32(RESULT_ADDRESS)

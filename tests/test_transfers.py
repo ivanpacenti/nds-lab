@@ -105,12 +105,8 @@ def test_memory_failure_preserves_state(word, base):
 @pytest.mark.parametrize(
     "word",
     [
-        0xE7910002,  # Register offset
-        0xE5D10000,  # LDRB
-        0xE5C10000,  # STRB
         0xE4B10004,  # LDRT
         0xE4A10004,  # STRT
-        0xE591F000,  # LDR pc
         0xE581F000,  # STR pc
         0xE5BF0004,  # PC base with write-back
         0xE49F0004,  # PC base with post-indexing
