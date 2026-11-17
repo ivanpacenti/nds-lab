@@ -68,6 +68,9 @@ same reference point. BL stores the return address in r14.
 - MOV, ADD, SUB, CMP with rotated ARM immediates or unshifted registers.
 - Flag-setting variants and conditions from EQ through AL.
 - B and BL with positive or negative offsets.
+- Word LDR/STR with 12-bit immediate offsets, addition/subtraction, pre-indexing
+  with optional write-back, and post-indexing with implicit write-back.
+- PC-relative addressing without write-back, including literal loads.
 - 8-bit, 16-bit, and 32-bit memory reads and writes through the Python API.
 
 Unsupported instructions raise `UnsupportedInstruction` when their condition
@@ -75,7 +78,7 @@ passes. Decoding errors preserve registers and flags. Failed conditions advance
 PC without executing the instruction body.
 
 This version is a partial educational interpreter. Future work includes Thumb,
-CPU load/store instructions, register shifts, arithmetic writes to PC,
+byte/halfword transfers, register offsets, register shifts, arithmetic writes to PC,
 privileged modes, exceptions, and complete CPSR/SPSR support.
 Memory accesses require alignment for 16-bit and 32-bit operations. Hardware
 behavior for unaligned accesses, the DS memory map, simultaneous ARM7/ARM9
@@ -93,8 +96,58 @@ uv run ruff format --check .
 For the next exercise, change the CMP immediate limit from 11 to 6 and try
 to predict the final sum and instruction count before running the demo.
 The final check in `main()` expects 55, so update it alongside the program.
-The next core extension will be LDR/STR to read and write memory directly
-from ARM instructions.
+Try the memory demo below to read and write data directly from ARM instructions.
+
+## Reading and writing RAM
+
+```bash
+uv run nds-lab --demo memory
+uv run nds-lab --demo memory --trace
+```
+
+Expected output
+
+```text
+Memory sum = 55, stored at 0x00000140 (44 instructions)
+```
+
+The runner places ten 32-bit values (1 through 10) at addresses `0x100` through
+`0x124`. The ARM program reads each value using LDR and stores the sum using STR.
+
+```asm
+    MOV r0, #0
+    MOV r1, #0x100
+    MOV r2, #10
+loop:
+    LDR r3, [r1], #4
+    ADD r0, r0, r3
+    SUBS r2, r2, #1
+    BNE loop
+    STR r0, [r1, #0x18]
+```
+
+`LDR r3, [r1], #4` reads a word at the address in r1, then advances r1 by four
+bytes. After ten iterations, r1 contains `0x128`. The final STR writes r0 to
+`0x128 + 0x18 = 0x140` without updating r1. LDR/STR preserve the flags.
+
+| Addressing form | Transfer address | Base after success |
+| --- | --- | --- |
+| `[r1, #4]` | Original r1 + 4 | Original r1 |
+| `[r1, #4]!` | Original r1 + 4 | Original r1 + 4 |
+| `[r1], #4` | Original r1 | Original r1 + 4 |
+
+Negative offsets subtract instead of adding. Address calculations wrap to 32 bits.
+The current subset rejects byte transfers, register offsets, LDRT/STRT,
+transfers to/from PC, and write-back when the base is PC or the data register.
+A PC base without write-back uses the instruction address plus eight.
+
+Transfers require aligned words within the memory region. Failed accesses raise
+`MemoryAccessError` and preserve CPU registers, flags, and memory, so the lab
+can inspect or retry them. Hardware data-abort exceptions remain future work.
+
+In PyCharm, put a breakpoint in `CPU._single_data_transfer()` and run the
+`nds_lab` module with `--demo memory`. Watch `address`, r1, and r3 during LDR,
+then inspect `cpu.memory.read32(0x140)` after STR.
 
 ## Technical reference
 

@@ -110,6 +110,43 @@ class CPU:
             self.c = carry
             self.v = overflow
 
+    def _single_data_transfer(self, instruction: int) -> None:
+        pre_index = bool(instruction & (1 << 24))
+        add_offset = bool(instruction & (1 << 23))
+        write_back_bit = bool(instruction & (1 << 21))
+        load = bool(instruction & (1 << 20))
+        base_register = (instruction >> 16) & 0xF
+        data_register = (instruction >> 12) & 0xF
+        write_back = not pre_index or write_back_bit
+
+        if instruction & (1 << 25):
+            raise UnsupportedInstruction("Register-offset transfers are unsupported")
+        if instruction & (1 << 22):
+            raise UnsupportedInstruction("Byte transfers are unsupported")
+        if not pre_index and write_back_bit:
+            raise UnsupportedInstruction("Unprivileged LDRT/STRT are unsupported")
+        if data_register == 15:
+            raise UnsupportedInstruction("Transfers to or from PC are unsupported")
+        if write_back and base_register in (15, data_register):
+            raise UnsupportedInstruction("Unsupported write-back register combination")
+
+        base = self._read_register(base_register)
+        offset = instruction & 0xFFF
+        if not add_offset:
+            offset = -offset
+        updated_base = (base + offset) & MASK32
+        address = updated_base if pre_index else base
+
+        # Commit register updates only after the memory access succeeds.
+        # MemoryAccessError is a lab error; hardware data aborts are future work.
+        if load:
+            value = self.memory.read32(address)
+            self.registers[data_register] = value
+        else:
+            self.memory.write32(address, self._read_register(data_register))
+        if write_back:
+            self.registers[base_register] = updated_base
+
     def step(self) -> StepResult:
         address = self.pc
         instruction = self.memory.read32(address)
@@ -126,6 +163,8 @@ class CPU:
                 next_pc = (address + 8 + displacement * 4) & MASK32
                 if instruction & (1 << 24):
                     self.registers[14] = (address + 4) & MASK32
+            elif (instruction >> 26) & 3 == 1:
+                self._single_data_transfer(instruction)
             elif (instruction >> 26) & 3 == 0:
                 self._data_processing(instruction)
             else:
