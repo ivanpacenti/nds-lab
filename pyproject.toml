@@ -1,0 +1,26 @@
+[project]
+name = "nds-lab"
+version = "0.1.0"
+description = "An educational ARM interpreter on the road to Nintendo DS emulation"
+readme = "README.md"
+requires-python = ">=3.12"
+dependencies = []
+
+[project.scripts]
+nds-lab = "nds_lab.demo:main"
+
+[dependency-groups]
+dev = ["pytest>=8", "ruff>=0.9"]
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.ruff]
+line-length = 88
+
+[tool.ruff.lint]
+select = ["E", "F", "I"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
